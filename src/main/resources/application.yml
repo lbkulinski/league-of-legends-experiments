@@ -1,2 +1,4 @@
 riot:
   api-key: ${RIOT_API_KEY}
+  game-name: ${RIOT_GAME_NAME}
+  tag-line: ${RIOT_TAG_LINE}
