@@ -70,18 +70,18 @@ public final class Runner implements ApplicationRunner {
         return participant.getTotalDamageDealtToChampions();
     }
 
-    private void saveData(Map<ZonedDateTime, Long> datesToDamagePerMinutes) {
-        Objects.requireNonNull(datesToDamagePerMinutes);
+    private void saveData(Map<ZonedDateTime, Integer> datesToDamages) {
+        Objects.requireNonNull(datesToDamages);
 
         Path path = Path.of("src/main/resources/damage.csv");
 
         CSVFormat format = CSVFormat.DEFAULT.builder()
-                                            .setHeader("Date", "Damage per minute")
+                                            .setHeader("Date", "Total Damage Dealt to Champions")
                                             .build();
 
         try (BufferedWriter writer = Files.newBufferedWriter(path, StandardOpenOption.CREATE);
              CSVPrinter printer = new CSVPrinter(writer, format)) {
-            datesToDamagePerMinutes.forEach((date, dpm) -> {
+            datesToDamages.forEach((date, dpm) -> {
                 DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG);
 
                 String dateString = date.format(formatter);
@@ -114,7 +114,7 @@ public final class Runner implements ApplicationRunner {
                                         .getMatchAPI()
                                         .getMatchList(RegionShard.AMERICAS, puuid);
 
-        Map<ZonedDateTime, Long> datesToDamagePerMinutes = new TreeMap<>();
+        Map<ZonedDateTime, Integer> datesToDamages = new TreeMap<>();
 
         for (String matchId : matchIds) {
             LOLMatch match = this.r4J.getLoLAPI()
@@ -125,13 +125,9 @@ public final class Runner implements ApplicationRunner {
 
             int participantDamage = this.getParticipantDamage(match, this.gameName);
 
-            Duration duration = match.getGameDurationAsDuration();
-
-            long dpm = participantDamage / duration.toMinutes();
-
-            datesToDamagePerMinutes.put(gameStart, dpm);
+            datesToDamages.put(gameStart, participantDamage);
         }
 
-        this.saveData(datesToDamagePerMinutes);
+        this.saveData(datesToDamages);
     }
 }
