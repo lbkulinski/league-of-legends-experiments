@@ -1,60 +1,133 @@
 package com.logankulinski.runner;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.logankulinski.client.DataDragonClient;
-import com.logankulinski.client.RiotClient;
-import com.logankulinski.model.Account;
-import com.logankulinski.model.Match;
+import no.stelar7.api.r4j.basic.constants.api.regions.RegionShard;
+import no.stelar7.api.r4j.impl.R4J;
+import no.stelar7.api.r4j.pojo.lol.match.v5.LOLMatch;
+import no.stelar7.api.r4j.pojo.lol.match.v5.MatchParticipant;
+import no.stelar7.api.r4j.pojo.shared.RiotAccount;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 
 @Component
 public final class Runner implements ApplicationRunner {
-    private final DataDragonClient dataDragonClient;
+    private final R4J r4J;
 
-    private final RiotClient riotClient;
+    private final String gameName;
 
-    private final ObjectMapper objectMapper;
+    private final String tagLine;
+
+    private static final Logger LOGGER;
+
+    static {
+        LOGGER = LoggerFactory.getLogger(Runner.class);
+    }
 
     @Autowired
-    public Runner(DataDragonClient dataDragonClient, RiotClient riotClient, ObjectMapper objectMapper) {
-        this.dataDragonClient = Objects.requireNonNull(dataDragonClient);
+    public Runner(R4J r4J, @Value("${riot.game-name}") String gameName, @Value("${riot.tag-line}") String tagLine) {
+        this.r4J = Objects.requireNonNull(r4J);
 
-        this.riotClient = Objects.requireNonNull(riotClient);
+        this.gameName = Objects.requireNonNull(gameName);
 
-        this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.tagLine = Objects.requireNonNull(tagLine);
+    }
+
+    private int getParticipantDamage(LOLMatch match, String gameName) {
+        Objects.requireNonNull(match);
+
+        Objects.requireNonNull(gameName);
+
+        MatchParticipant participant = match.getParticipants()
+                                            .stream()
+                                            .filter(matchParticipant -> {
+                                                String summonerName = matchParticipant.getSummonerName();
+
+                                                return Objects.equals(summonerName, gameName);
+                                            })
+                                            .findAny()
+                                            .orElseThrow();
+
+        return participant.getTotalDamageDealtToChampions();
+    }
+
+    private void saveData(Map<ZonedDateTime, Integer> datesToDamages) {
+        Objects.requireNonNull(datesToDamages);
+
+        Path path = Path.of("src/main/resources/damage.csv");
+
+        CSVFormat format = CSVFormat.DEFAULT.builder()
+                                            .setHeader("Date", "Total Damage Dealt to Champions")
+                                            .build();
+
+        try (BufferedWriter writer = Files.newBufferedWriter(path, StandardOpenOption.CREATE);
+             CSVPrinter printer = new CSVPrinter(writer, format)) {
+            datesToDamages.forEach((date, dpm) -> {
+                DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG);
+
+                String dateString = date.format(formatter);
+
+                try {
+                    printer.printRecord(dateString, dpm);
+                } catch (IOException e) {
+                    String message = e.getMessage();
+
+                    Runner.LOGGER.error(message, e);
+                }
+            });
+        } catch (IOException e) {
+            String message = e.getMessage();
+
+            Runner.LOGGER.error(message, e);
+        }
     }
 
     @Override
-    public void run(ApplicationArguments args) throws Exception {
-        Account account = this.riotClient.getAccount("lbku", "lbku");
+    public void run(ApplicationArguments args) {
+        Objects.requireNonNull(args);
 
-        String puuid = account.puuid();
+        RiotAccount account = this.r4J.getAccountAPI()
+                                      .getAccountByTag(RegionShard.AMERICAS, this.gameName, this.tagLine);
 
-        int start = 0;
+        String puuid = account.getPUUID();
 
-        int count = 100;
+        List<String> matchIds = this.r4J.getLoLAPI()
+                                        .getMatchAPI()
+                                        .getMatchList(RegionShard.AMERICAS, puuid);
 
-        List<String> page = this.riotClient.getMatchIds(puuid, start, count);
+        Map<ZonedDateTime, Integer> datesToDamages = new TreeMap<>();
 
-        List<String> matchIds = new ArrayList<>();
+        for (String matchId : matchIds) {
+            LOLMatch match = this.r4J.getLoLAPI()
+                                     .getMatchAPI()
+                                     .getMatch(RegionShard.AMERICAS, matchId);
 
-        while (!page.isEmpty()) {
-            matchIds.addAll(page);
+            ZonedDateTime gameStart = match.getGameStartAsDate();
 
-            start += page.size();
+            int participantDamage = this.getParticipantDamage(match, this.gameName);
 
-            page = this.riotClient.getMatchIds(puuid, start, count);
+            datesToDamages.put(gameStart, participantDamage);
         }
 
-        String matchId = matchIds.getFirst();
-
-        Match match = this.riotClient.getMatch(matchId);
-
-        System.out.println(this.objectMapper.writeValueAsString(match));
+        this.saveData(datesToDamages);
     }
 }

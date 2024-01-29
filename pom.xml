@@ -25,12 +25,21 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
-		<!--
 		<dependency>
-			<groupId>org.springframework.shell</groupId>
-			<artifactId>spring-shell-starter</artifactId>
+			<groupId>com.github.stelar7</groupId>
+			<artifactId>R4J</artifactId>
+			<version>2.4.5</version>
 		</dependency>
-		-->
+		<dependency>
+			<groupId>com.google.code.gson</groupId>
+			<artifactId>gson</artifactId>
+			<version>2.10.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-csv</artifactId>
+			<version>1.10.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -42,19 +51,6 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-	<!--
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>org.springframework.shell</groupId>
-				<artifactId>spring-shell-dependencies</artifactId>
-				<version>3.2.0-RC1</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
-	-->
 	<build>
 		<plugins>
 			<plugin>
@@ -71,6 +67,10 @@
 			<snapshots>
 				<enabled>false</enabled>
 			</snapshots>
+		</repository>
+		<repository>
+			<id>jitpack.io</id>
+			<url>https://jitpack.io</url>
 		</repository>
 	</repositories>
 </project>
