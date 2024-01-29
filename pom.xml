@@ -28,7 +28,7 @@
 		<dependency>
 			<groupId>com.github.stelar7</groupId>
 			<artifactId>R4J</artifactId>
-			<version>2.4.1</version>
+			<version>2.4.5</version>
 		</dependency>
 		<dependency>
 			<groupId>com.google.code.gson</groupId>
@@ -40,12 +40,6 @@
 			<artifactId>commons-csv</artifactId>
 			<version>1.10.0</version>
 		</dependency>
-		<!--
-		<dependency>
-			<groupId>org.springframework.shell</groupId>
-			<artifactId>spring-shell-starter</artifactId>
-		</dependency>
-		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -57,19 +51,6 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-	<!--
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>org.springframework.shell</groupId>
-				<artifactId>spring-shell-dependencies</artifactId>
-				<version>3.2.0-RC1</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
-	-->
 	<build>
 		<plugins>
 			<plugin>

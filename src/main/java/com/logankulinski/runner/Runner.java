@@ -7,6 +7,8 @@ import no.stelar7.api.r4j.pojo.lol.match.v5.MatchParticipant;
 import no.stelar7.api.r4j.pojo.shared.RiotAccount;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -17,10 +19,15 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.time.format.FormatStyle;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 
 @Component
 public final class Runner implements ApplicationRunner {
@@ -29,6 +36,12 @@ public final class Runner implements ApplicationRunner {
     private final String gameName;
 
     private final String tagLine;
+
+    private static final Logger LOGGER;
+
+    static {
+        LOGGER = LoggerFactory.getLogger(Runner.class);
+    }
 
     @Autowired
     public Runner(R4J r4J, @Value("${riot.game-name}") String gameName, @Value("${riot.tag-line}") String tagLine) {
@@ -39,19 +52,59 @@ public final class Runner implements ApplicationRunner {
         this.tagLine = Objects.requireNonNull(tagLine);
     }
 
-    private Optional<MatchParticipant> getParticipant(LOLMatch match, String name) {
-        return match.getParticipants()
-                    .stream()
-                    .filter(participant -> {
-                        String summonerName = participant.getSummonerName();
+    private int getParticipantDamage(LOLMatch match, String gameName) {
+        Objects.requireNonNull(match);
 
-                        return Objects.equals(summonerName, name);
-                    })
-                    .findAny();
+        Objects.requireNonNull(gameName);
+
+        MatchParticipant participant = match.getParticipants()
+                                            .stream()
+                                            .filter(matchParticipant -> {
+                                                String summonerName = matchParticipant.getSummonerName();
+
+                                                return Objects.equals(summonerName, gameName);
+                                            })
+                                            .findAny()
+                                            .orElseThrow();
+
+        return participant.getTotalDamageDealtToChampions();
+    }
+
+    private void saveData(Map<ZonedDateTime, Long> datesToDamagePerMinutes) {
+        Objects.requireNonNull(datesToDamagePerMinutes);
+
+        Path path = Path.of("src/main/resources/damage.csv");
+
+        CSVFormat format = CSVFormat.DEFAULT.builder()
+                                            .setHeader("Date", "Damage per minute")
+                                            .build();
+
+        try (BufferedWriter writer = Files.newBufferedWriter(path, StandardOpenOption.CREATE);
+             CSVPrinter printer = new CSVPrinter(writer, format)) {
+            datesToDamagePerMinutes.forEach((date, dpm) -> {
+                DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG);
+
+                String dateString = date.format(formatter);
+
+                try {
+                    printer.printRecord(dateString, dpm);
+                } catch (IOException e) {
+                    String message = e.getMessage();
+
+                    Runner.LOGGER.error(message, e);
+                }
+            });
+        } catch (IOException e) {
+            String message = e.getMessage();
+
+            Runner.LOGGER.error(message, e);
+        }
     }
 
     @Override
     public void run(ApplicationArguments args) {
+        Objects.requireNonNull(args);
+
         RiotAccount account = this.r4J.getAccountAPI()
                                       .getAccountByTag(RegionShard.AMERICAS, this.gameName, this.tagLine);
 
@@ -61,84 +114,24 @@ public final class Runner implements ApplicationRunner {
                                         .getMatchAPI()
                                         .getMatchList(RegionShard.AMERICAS, puuid);
 
-        Map<ZonedDateTime, List<Integer>> datesToDamages = new TreeMap<>();
+        Map<ZonedDateTime, Long> datesToDamagePerMinutes = new TreeMap<>();
 
         for (String matchId : matchIds) {
             LOLMatch match = this.r4J.getLoLAPI()
                                      .getMatchAPI()
                                      .getMatch(RegionShard.AMERICAS, matchId);
 
-            Duration duration = match.getGameDurationAsDuration();
-
-            if (duration.toMinutes() < 10) {
-                continue;
-            }
-
-            System.out.println(match.getGameStartAsDate());
-
-            Optional<MatchParticipant> me = this.getParticipant(match, "lbku");
-
-            Optional<MatchParticipant> daniel = this.getParticipant(match, "Elektrode");
-
-            Optional<MatchParticipant> jonathan = this.getParticipant(match, "Tokuro");
-
-            Optional<MatchParticipant> jamie = this.getParticipant(match, "Tzymph");
-
-            Optional<MatchParticipant> phi = this.getParticipant(match, "PhiMouse");
-
-            if (me.isEmpty() || daniel.isEmpty() || jonathan.isEmpty() || jamie.isEmpty() || phi.isEmpty()) {
-                continue;
-            }
-
             ZonedDateTime gameStart = match.getGameStartAsDate();
 
-            int myDamage = me.get()
-                             .getTotalDamageDealtToChampions();
+            int participantDamage = this.getParticipantDamage(match, this.gameName);
 
-            int danielDamage = daniel.get()
-                                     .getTotalDamageDealtToChampions();
+            Duration duration = match.getGameDurationAsDuration();
 
-            int jonathanDamage = jonathan.get()
-                                         .getTotalDamageDealtToChampions();
+            long dpm = participantDamage / duration.toMinutes();
 
-            int jamieDamage = jamie.get()
-                                   .getTotalDamageDealtToChampions();
-
-            int phiDamage = phi.get()
-                               .getTotalDamageDealtToChampions();
-
-            datesToDamages.put(gameStart, List.of(myDamage, danielDamage, jonathanDamage, jamieDamage, phiDamage));
+            datesToDamagePerMinutes.put(gameStart, dpm);
         }
 
-        Path path = Path.of("src/main/resources/static/damage.csv");
-
-        CSVFormat format = CSVFormat.DEFAULT.builder()
-                                            .setHeader("Date", "Logan's Damage", "Daniel's Damage", "Jonathan's Damage", "Jamie's Damage", "Phi's Damage")
-                                            .build();
-
-        try (BufferedWriter writer = Files.newBufferedWriter(path);
-             CSVPrinter printer = new CSVPrinter(writer, format)) {
-            datesToDamages.forEach((date, damage) -> {
-                String dateString = date.format(DateTimeFormatter.ofPattern("yy-MM-dd H:mm"));
-
-                int myDamage = damage.get(0);
-
-                int danielDamage = damage.get(1);
-
-                int jonathanDamage = damage.get(2);
-
-                int jamieDamage = damage.get(3);
-
-                int phiDamage = damage.get(4);
-
-                try {
-                    printer.printRecord(dateString, myDamage, danielDamage, jonathanDamage, jamieDamage, phiDamage);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        this.saveData(datesToDamagePerMinutes);
     }
 }
